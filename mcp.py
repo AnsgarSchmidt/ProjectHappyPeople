@@ -1,8 +1,11 @@
 import picamera
 import os
+import numpy as np
+import cv2
 import sys
 import uuid
 import time
+import types
 import json
 import requests
 import ConfigParser
@@ -102,7 +105,10 @@ class PHP():
     def _get_ms_results(self, filename):
         # https://www.microsoft.com/cognitive-services/en-US/subscriptions
         CF.Key.set(self._config.get("MICROSOFT", "FaceKey"))
-        return CF.face.detect(filename, landmarks=False, attributes='age,gender,smile,facialHair,glasses,emotion')
+        j = {}
+        j['filename'] = filename
+        j['result']   = CF.face.detect(filename, landmarks=False, attributes='age,gender,smile,facialHair,glasses,emotion')
+        return j
 
     def _get_ibm_results(self, filename):
         visual_recognition = VisualRecognitionV3('2016-05-20', api_key=self._config.get("IBM", "visualkey"))
@@ -110,7 +116,6 @@ class PHP():
             return visual_recognition.classify(images_file=image_file)
 
     def _store_result_in_db(self, ms, ibm):
-
         if "ms_results" not in self._db.all_dbs():
             self._db.create_database('ms_results')
             print "Creating ms_results"
@@ -119,26 +124,49 @@ class PHP():
             self._db.create_database('ibm_results')
             print "Creating ibm_results"
 
-        ms_database = self._db['ms_results']
-        ms_document = ms_database.create_document(ms)
+        if ms is not None:
+            ms_database = self._db['ms_results']
+            ms_document = ms_database.create_document(ms)
 
-        if ms_document.exists():
-            print 'SUCCESS MS!!'
+            if ms_document.exists():
+                print 'SUCCESS MS!!'
 
-        ibm_database = self._db['ibm_results']
-        ibm_document = ibm_database.create_document(ibm)
+        if ibm is not None:
+            ibm_database = self._db['ibm_results']
+            ibm_document = ibm_database.create_document(ibm)
 
-        if ibm_document.exists():
-            print 'SUCCESS IBM!!'
+            if ibm_document.exists():
+                print 'SUCCESS IBM!!'
+
+    def _enhance_image(self, filename, ms, ibm):
+        img = cv2.imread(filename)
+
+        for currFace in ms['result']:
+            faceRectangle = currFace['faceRectangle']
+            score = 0.0
+            emotion = "neural"
+            for e in currFace['faceAttributes']['emotion']:
+                if currFace['faceAttributes']['emotion'][e] > score:
+                    score = currFace['faceAttributes']['emotion'][e]
+                    emotion = e
+            age           = currFace['faceAttributes']['age']
+            textToWrite   = "%s - %s" % (age, emotion)
+            cv2.rectangle(img, (faceRectangle['left'], faceRectangle['top']),
+                               (faceRectangle['left'] + faceRectangle['width'],
+                                faceRectangle['top'] + faceRectangle['height']),
+                               color=(255, 255, 0), thickness=5)
+            cv2.putText(img, textToWrite, (faceRectangle['left'], faceRectangle['top'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+        cv2.imwrite('/tmp/test.png', img)
 
     def main_loop(self):
         current_image = self._capture_picture()
-        # print current_image
-        msjson = self._get_ms_results(current_image)
-        ibmjson = self._get_ibm_results(current_image)
-        # print json.dumps(msjson,  sort_keys=True, indent=4, separators=(',', ': '))
-        # print json.dumps(ibmjson, sort_keys=True, indent=4, separators=(',', ': '))
+        msjson        = self._get_ms_results(current_image)
+        ibmjson       = self._get_ibm_results(current_image)
+        print json.dumps(msjson,  sort_keys=True, indent=4, separators=(',', ': '))
+        print json.dumps(ibmjson, sort_keys=True, indent=4, separators=(',', ': '))
         self._store_result_in_db(msjson, ibmjson)
+        self._enhance_image(current_image, msjson, ibmjson)
 
 if __name__ == "__main__":
     p = PHP()

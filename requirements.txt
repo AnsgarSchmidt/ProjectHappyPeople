@@ -3,3 +3,4 @@ picamera
 cognitive_face
 watson-developer-cloud
 cloudant
+numpy
