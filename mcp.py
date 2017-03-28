@@ -159,6 +159,20 @@ class PHP():
 
         cv2.imwrite('/tmp/test.png', img)
 
+    def _cut_faces(self, filename, ms):
+        img = cv2.imread(filename)
+
+        for currFace in ms['result']:
+            faceRectangle = currFace['faceRectangle']
+            x = faceRectangle['left']
+            y = faceRectangle['top']
+            w = faceRectangle['width']
+            h = faceRectangle['height']
+
+            crop_img = img[y:y+h, x:x+w]
+            newfilename = "%s/%s.jpg" % (self._config.get("DIRS", "Mosaic"), uuid.uuid4())
+            cv2.imwrite(newfilename, crop_img)
+
     def main_loop(self):
         current_image = self._capture_picture()
         msjson        = self._get_ms_results(current_image)
@@ -167,6 +181,7 @@ class PHP():
         print json.dumps(ibmjson, sort_keys=True, indent=4, separators=(',', ': '))
         self._store_result_in_db(msjson, ibmjson)
         self._enhance_image(current_image, msjson, ibmjson)
+        self._cut_faces(current_image, msjson)
 
 if __name__ == "__main__":
     p = PHP()

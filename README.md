@@ -4,7 +4,7 @@
 sudo apt-get update
 sudo apt-get upgrade -y
 sudo apt-get dist-upgrade -y
-sudo apt-get install -y vim mc git screen python-pip python-virtualenv 
+sudo apt-get install -y vim mc git screen python-pip python-virtualenv fbi
 sudo apt-get install -y build-essential git cmake pkg-config
 sudo apt-get install -y libjpeg-dev libtiff5-dev libjasper-dev libpng12-dev
 sudo apt-get install -y libavcodec-dev libavformat-dev libswscale-dev libv4l-dev
