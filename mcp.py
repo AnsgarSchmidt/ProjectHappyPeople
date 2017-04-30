@@ -18,7 +18,7 @@ class PHP():
     def __init__(self):
         self._get_config()
         self._camera = picamera.PiCamera()
-        self._db = Cloudant(self._config.get("CLOUDANT", "Username"), self._config.get("CLOUDANT", "Password"), account=self._config.get("CLOUDANT", "Host"), connect=True)
+        #self._db = Cloudant(self._config.get("CLOUDANT", "Username"), self._config.get("CLOUDANT", "Password"), account=self._config.get("CLOUDANT", "Host"), connect=True)
 
     def _get_config(self):
         update       = False
@@ -113,6 +113,7 @@ class PHP():
     def _get_ibm_results(self, filename):
         visual_recognition = VisualRecognitionV3('2016-05-20', api_key=self._config.get("IBM", "visualkey"))
         with open(filename, 'rb') as image_file:
+            #return visual_recognition.detect_faces(images_file=image_file)
             return visual_recognition.classify(images_file=image_file)
 
     def _store_result_in_db(self, ms, ibm):
@@ -157,6 +158,11 @@ class PHP():
                                color=(255, 255, 0), thickness=5)
             cv2.putText(img, textToWrite, (faceRectangle['left'], faceRectangle['top'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
+        textToWrite = "Goal   : Total age:%.1f / Male:%d / Female:%d / Glases:%d / Hair:%d / Happy:%d / Surprised:%d" % (23.2, 1, 2, 3, 4, 5, 6)
+        cv2.putText(img, textToWrite, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 3)
+        textToWrite = "Current: Total age:%.1f / Male:%d / Female:%d / Glases:%d / Hair:%d / Happy:%d / Surprised:%d" % (self.get_total_age(ms), self.get_total_male(ms), self.get_total_female(ms), self.get_total_glases(ms), self.get_total_with_hair(ms), self.get_happy(self.get_emotions(ms)), self.get_surprised(self.get_emotions(ms)))
+        cv2.putText(img, textToWrite, (0, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
+
         cv2.imwrite('/tmp/test.png', img)
 
     def _cut_faces(self, filename, ms):
@@ -173,15 +179,86 @@ class PHP():
             newfilename = "%s/%s.jpg" % (self._config.get("DIRS", "Mosaic"), uuid.uuid4())
             cv2.imwrite(newfilename, crop_img)
 
+    def get_total_age(self, ms):
+        totalage = 0.0
+        for currFace in ms['result']:
+            totalage += currFace['faceAttributes']['age']
+        return totalage
+
+    def get_total_male(self, ms):
+        totalmale = 0
+        for currFace in ms['result']:
+            if currFace['faceAttributes']['gender'] == "male":
+                totalmale += 1
+        return totalmale
+
+    def get_total_female(self, ms):
+        totalfemale = 0
+        for currFace in ms['result']:
+            if currFace['faceAttributes']['gender'] == "female":
+                totalfemale += 1
+        return totalfemale
+
+    def get_total_glases(self, ms):
+        totalglases = 0
+        for currFace in ms['result']:
+            if currFace['faceAttributes']['gender'] != "NoGlasses":
+                totalglases += 1
+        return totalglases
+
+    def get_total_with_hair(self, ms):
+        total = 0
+        for currFace in ms['result']:
+            if currFace['faceAttributes']['facialHair']['beard'] > 0.5 or currFace['faceAttributes']['facialHair']['moustache'] > 0.5 or currFace['faceAttributes']['facialHair']['sideburns'] > 0.5:
+                total += 1
+        return total
+
+    def get_emotions(self, ms):
+        emotions = {}
+        for currFace in ms['result']:
+            score = 0.0
+            emotion = "neural"
+            for e in currFace['faceAttributes']['emotion']:
+                if currFace['faceAttributes']['emotion'][e] > score:
+                    score = currFace['faceAttributes']['emotion'][e]
+                    emotion = e
+            if emotion in emotions:
+                emotions[emotion] += 1
+            else:
+                emotions[emotion] = 1
+        return emotions
+
+    def get_happy(self, data):
+        if "happiness" in data:
+            return data['happiness']
+        else:
+            return 0
+
+    def get_surprised(self, data):
+        if "surprise" in data:
+            return data['surprise']
+        else:
+            return 0
+
+    def new_games_rulez(self):
+        return None
+
     def main_loop(self):
         current_image = self._capture_picture()
         msjson        = self._get_ms_results(current_image)
         ibmjson       = self._get_ibm_results(current_image)
         print json.dumps(msjson,  sort_keys=True, indent=4, separators=(',', ': '))
         print json.dumps(ibmjson, sort_keys=True, indent=4, separators=(',', ': '))
-        self._store_result_in_db(msjson, ibmjson)
+        #self._store_result_in_db(msjson, ibmjson)
         self._enhance_image(current_image, msjson, ibmjson)
         self._cut_faces(current_image, msjson)
+        print "Total age:%f" % self.get_total_age(msjson)
+        print "Total male:%d" % self.get_total_male(msjson)
+        print "Total female:%d" % self.get_total_female(msjson)
+        print "Total glases:%d" % self.get_total_glases(msjson)
+        print "Total hair:%d" % self.get_total_with_hair(msjson)
+        print json.dumps(self.get_emotions(msjson), sort_keys=True, indent=4)
+
 
 if __name__ == "__main__":
     p = PHP()
