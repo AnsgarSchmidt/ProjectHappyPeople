@@ -6,19 +6,43 @@ import sys
 import uuid
 import time
 import types
+import random
 import json
 import requests
 import ConfigParser
+import RPi.GPIO       as GPIO
 import cognitive_face as CF
+from subprocess import call
 from watson_developer_cloud import VisualRecognitionV3
 from cloudant.client import Cloudant
 
 class PHP():
 
     def __init__(self):
+        random.seed()
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup( 3, GPIO.IN,  pull_up_down=GPIO.PUD_UP)
+        GPIO.setup( 5, GPIO.IN,  pull_up_down=GPIO.PUD_UP)
+        GPIO.setup(12, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setup(16, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setup(18, GPIO.OUT, initial=GPIO.LOW)
         self._get_config()
+        CF.Key.set(self._config.get("MICROSOFT", "FaceKey"))
+        self._visual_recognition = VisualRecognitionV3('2016-05-20', api_key=self._config.get("IBM", "visualkey"))
         self._camera = picamera.PiCamera()
         #self._db = Cloudant(self._config.get("CLOUDANT", "Username"), self._config.get("CLOUDANT", "Password"), account=self._config.get("CLOUDANT", "Host"), connect=True)
+
+    def _generate_game_goals(self):
+        self._game_goals = {}
+        self._game_goals['total']     = random.randint( 5, 10)
+        self._game_goals['age']       = random.randint(15, 42) * self._game_goals['total']
+        self._game_goals['male']      = random.randint(0,  self._game_goals['total'])
+        self._game_goals['female']    = random.randint(0, (self._game_goals['total'] - self._game_goals['male']))
+        self._game_goals['glasses']   = random.randint(0,  self._game_goals['total'])
+        self._game_goals['hair']      = random.randint(0,  self._game_goals['male'])
+        self._game_goals['happy']     = random.randint(0,  self._game_goals['total'])
+        self._game_goals['surprised'] = random.randint(0, (self._game_goals['total'] - self._game_goals['happy']))
 
     def _get_config(self):
         update       = False
@@ -98,25 +122,19 @@ class PHP():
             sys.exit(1)
 
     def _capture_picture(self):
-        name = "%s/%s.jpg" % (self._config.get("DIRS", "Capture"), uuid.uuid4())
-        self._camera.capture(name)
-        return name
+        self._current_picture_name = "%s/%s.jpg" % (self._config.get("DIRS", "Capture"), uuid.uuid4())
+        self._camera.capture(self._current_picture_name)
 
-    def _get_ms_results(self, filename):
+    def _get_ms_results(self):
         # https://www.microsoft.com/cognitive-services/en-US/subscriptions
-        CF.Key.set(self._config.get("MICROSOFT", "FaceKey"))
-        j = {}
-        j['filename'] = filename
-        j['result']   = CF.face.detect(filename, landmarks=False, attributes='age,gender,smile,facialHair,glasses,emotion')
-        return j
+        self._ms_result = CF.face.detect(self._current_picture_name, landmarks=False, attributes='age,gender,smile,facialHair,glasses,emotion')
 
-    def _get_ibm_results(self, filename):
-        visual_recognition = VisualRecognitionV3('2016-05-20', api_key=self._config.get("IBM", "visualkey"))
-        with open(filename, 'rb') as image_file:
-            #return visual_recognition.detect_faces(images_file=image_file)
-            return visual_recognition.classify(images_file=image_file)
+    def _get_ibm_results(self):
+        with open(self._current_picture_name, 'rb') as image_file:
+            #self._ibm_face_results = self._visual_recognition.detect_faces(images_file=image_file)
+            self._ibm_results = self._visual_recognition.classify(images_file=image_file)
 
-    def _store_result_in_db(self, ms, ibm):
+    def _store_in_db(self):
         if "ms_results" not in self._db.all_dbs():
             self._db.create_database('ms_results')
             print "Creating ms_results"
@@ -125,50 +143,48 @@ class PHP():
             self._db.create_database('ibm_results')
             print "Creating ibm_results"
 
-        if ms is not None:
+        if self._ms_result is not None:
             ms_database = self._db['ms_results']
-            ms_document = ms_database.create_document(ms)
+            ms_document = ms_database.create_document(self._ms_result)
 
             if ms_document.exists():
                 print 'SUCCESS MS!!'
 
-        if ibm is not None:
+        if self._ibm_results is not None:
             ibm_database = self._db['ibm_results']
-            ibm_document = ibm_database.create_document(ibm)
+            ibm_document = ibm_database.create_document(self._ibm_results)
 
             if ibm_document.exists():
                 print 'SUCCESS IBM!!'
 
-    def _enhance_image(self, filename, ms, ibm):
-        img = cv2.imread(filename)
+    def _enhance_image(self):
+        img = cv2.imread(self._current_picture_name)
 
-        for currFace in ms['result']:
+        for currFace in self._ms_result:
             faceRectangle = currFace['faceRectangle']
-            score = 0.0
-            emotion = "neural"
-            for e in currFace['faceAttributes']['emotion']:
-                if currFace['faceAttributes']['emotion'][e] > score:
-                    score = currFace['faceAttributes']['emotion'][e]
-                    emotion = e
+            emotion       = self._extract_emotion(currFace['faceAttributes']['emotion'])
             age           = currFace['faceAttributes']['age']
             textToWrite   = "%s - %s" % (age, emotion)
             cv2.rectangle(img, (faceRectangle['left'], faceRectangle['top']),
                                (faceRectangle['left'] + faceRectangle['width'],
                                 faceRectangle['top'] + faceRectangle['height']),
-                               color=(255, 255, 0), thickness=5)
+                               color=(255, 255, 0), thickness=3)
             cv2.putText(img, textToWrite, (faceRectangle['left'], faceRectangle['top'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
-        textToWrite = "Goal   : Total age:%.1f / Male:%d / Female:%d / Glases:%d / Hair:%d / Happy:%d / Surprised:%d" % (23.2, 1, 2, 3, 4, 5, 6)
+        textToWrite = "Goal   : Age:%03.1f / Male:%d / Female:%d / Glases:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_goals['age'], self._game_goals['male'], self._game_goals['female'], self._game_goals['glasses'], self._game_goals['hair'], self._game_goals['happy'], self._game_goals['surprised'])
         cv2.putText(img, textToWrite, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 3)
-        textToWrite = "Current: Total age:%.1f / Male:%d / Female:%d / Glases:%d / Hair:%d / Happy:%d / Surprised:%d" % (self.get_total_age(ms), self.get_total_male(ms), self.get_total_female(ms), self.get_total_glases(ms), self.get_total_with_hair(ms), self.get_happy(self.get_emotions(ms)), self.get_surprised(self.get_emotions(ms)))
+        textToWrite = "Current: Age:%03.1f / Male:%d / Female:%d / Glases:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_results['age'], self._game_results['male'], self._game_results['female'], self._game_results['glasses'], self._game_results['hair'], self._game_results['happy'], self._game_results['surprised'])
         cv2.putText(img, textToWrite, (0, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
-
+        if self._check_game():
+            cv2.putText(img, "You Won!", (0, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
+        else:
+            cv2.putText(img, "Find more people :-)", (0, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 3)
         cv2.imwrite('/tmp/test.png', img)
 
-    def _cut_faces(self, filename, ms):
-        img = cv2.imread(filename)
+    def _cut_faces(self):
+        img = cv2.imread(self._current_picture_name)
 
-        for currFace in ms['result']:
+        for currFace in self._ms_result:
             faceRectangle = currFace['faceRectangle']
             x = faceRectangle['left']
             y = faceRectangle['top']
@@ -179,86 +195,88 @@ class PHP():
             newfilename = "%s/%s.jpg" % (self._config.get("DIRS", "Mosaic"), uuid.uuid4())
             cv2.imwrite(newfilename, crop_img)
 
-    def get_total_age(self, ms):
-        totalage = 0.0
-        for currFace in ms['result']:
-            totalage += currFace['faceAttributes']['age']
-        return totalage
+    def _extract_emotion(self, inmotion):
+        score = 0.0
+        emotion = "neural"
+        for e in inmotion:
+            if inmotion[e] > score:
+                score = inmotion[e]
+                emotion = e
+        return emotion
 
-    def get_total_male(self, ms):
-        totalmale = 0
-        for currFace in ms['result']:
+    def _extract_game_results(self):
+        self._game_results = {}
+        self._game_results['total']     = 0
+        self._game_results['age']       = 0
+        self._game_results['male']      = 0
+        self._game_results['female']    = 0
+        self._game_results['glasses']   = 0
+        self._game_results['hair']      = 0
+        self._game_results['happy']     = 0
+        self._game_results['surprised'] = 0
+
+        for currFace in self._ms_result:
+            self._game_results['total'] += 1
+            self._game_results['age']   += currFace['faceAttributes']['age']
             if currFace['faceAttributes']['gender'] == "male":
-                totalmale += 1
-        return totalmale
-
-    def get_total_female(self, ms):
-        totalfemale = 0
-        for currFace in ms['result']:
+                self._game_results['male'] += 1
             if currFace['faceAttributes']['gender'] == "female":
-                totalfemale += 1
-        return totalfemale
+                self._game_results['female'] += 1
+            if currFace['faceAttributes']['glasses'] != "NoGlasses":
+                self._game_results['glasses'] += 1
+            if currFace['faceAttributes']['facialHair']['beard']     > 0.5 or \
+               currFace['faceAttributes']['facialHair']['moustache'] > 0.5 or \
+               currFace['faceAttributes']['facialHair']['sideburns'] > 0.5:
+                self._game_results['hair'] += 1
+            if self._extract_emotion(currFace['faceAttributes']['emotion']) == "happiness":
+                self._game_results['happy'] += 1
+            if self._extract_emotion(currFace['faceAttributes']['emotion']) == "surprise":
+                self._game_results['surprised'] += 1
 
-    def get_total_glases(self, ms):
-        totalglases = 0
-        for currFace in ms['result']:
-            if currFace['faceAttributes']['gender'] != "NoGlasses":
-                totalglases += 1
-        return totalglases
-
-    def get_total_with_hair(self, ms):
-        total = 0
-        for currFace in ms['result']:
-            if currFace['faceAttributes']['facialHair']['beard'] > 0.5 or currFace['faceAttributes']['facialHair']['moustache'] > 0.5 or currFace['faceAttributes']['facialHair']['sideburns'] > 0.5:
-                total += 1
-        return total
-
-    def get_emotions(self, ms):
-        emotions = {}
-        for currFace in ms['result']:
-            score = 0.0
-            emotion = "neural"
-            for e in currFace['faceAttributes']['emotion']:
-                if currFace['faceAttributes']['emotion'][e] > score:
-                    score = currFace['faceAttributes']['emotion'][e]
-                    emotion = e
-            if emotion in emotions:
-                emotions[emotion] += 1
-            else:
-                emotions[emotion] = 1
-        return emotions
-
-    def get_happy(self, data):
-        if "happiness" in data:
-            return data['happiness']
+    def _check_game(self):
+        if self._game_results['age']       >= self._game_goals['age']      and \
+           self._game_results['male']      >= self._game_goals['male']     and \
+           self._game_results['female']    >= self._game_goals['female']   and \
+           self._game_results['glasses']   >= self._game_goals['glasses']  and \
+           self._game_results['hair']      >= self._game_goals['hair']     and \
+           self._game_results['happy']     >= self._game_goals['happy']    and \
+           self._game_results['surprised'] >= self._game_goals['surprised']:
+            GPIO.output(18, True)
+            return True
         else:
-            return 0
-
-    def get_surprised(self, data):
-        if "surprise" in data:
-            return data['surprise']
-        else:
-            return 0
-
-    def new_games_rulez(self):
-        return None
+            return False
 
     def main_loop(self):
-        current_image = self._capture_picture()
-        msjson        = self._get_ms_results(current_image)
-        ibmjson       = self._get_ibm_results(current_image)
-        print json.dumps(msjson,  sort_keys=True, indent=4, separators=(',', ': '))
-        print json.dumps(ibmjson, sort_keys=True, indent=4, separators=(',', ': '))
-        #self._store_result_in_db(msjson, ibmjson)
-        self._enhance_image(current_image, msjson, ibmjson)
-        self._cut_faces(current_image, msjson)
-        print "Total age:%f" % self.get_total_age(msjson)
-        print "Total male:%d" % self.get_total_male(msjson)
-        print "Total female:%d" % self.get_total_female(msjson)
-        print "Total glases:%d" % self.get_total_glases(msjson)
-        print "Total hair:%d" % self.get_total_with_hair(msjson)
-        print json.dumps(self.get_emotions(msjson), sort_keys=True, indent=4)
-
+        GPIO.output(12, False)
+        GPIO.output(16, False)
+        GPIO.output(18, False)
+        in_game = True
+        while True:
+            self._generate_game_goals()
+            in_game = True
+            while in_game:
+                while GPIO.input(3):
+                    time.sleep(0.3)
+                    if not GPIO.input(5):
+                        in_game = False
+                        break
+                    print "wait"
+                print "Capture"
+                GPIO.output(16, True)
+                GPIO.output(12, True)
+                self._capture_picture()
+                GPIO.output(16, False)
+                self._get_ms_results()
+                self._get_ibm_results()
+                self._cut_faces()
+                self._extract_game_results()
+                self._enhance_image()
+                GPIO.output(12, False)
+                print json.dumps(self._ms_result,   sort_keys=True, indent=4, separators=(',', ': '))
+                print json.dumps(self._ibm_results, sort_keys=True, indent=4, separators=(',', ': '))
+                print self._game_goals
+                print self._game_results
+                call(["killall", "fbi"])
 
 if __name__ == "__main__":
     p = PHP()
