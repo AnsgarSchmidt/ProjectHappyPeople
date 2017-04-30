@@ -176,10 +176,10 @@ class PHP():
                                color=(255, 255, 0), thickness=3)
             cv2.putText(img, textToWrite, (faceRectangle['left'], faceRectangle['top'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
-        cv2.rectangle(img, (0, 0), (1670, 60), color=(0, 0, 0), thickness=60)
-        textToWrite = "Goal   : Age:%03.1f / Male:%d / Female:%d / Glases:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_goals['age'], self._game_goals['male'], self._game_goals['female'], self._game_goals['glasses'], self._game_goals['hair'], self._game_goals['happy'], self._game_goals['surprised'])
+        cv2.rectangle(img, (0, 0), (1680, 60), color=(0, 0, 0), thickness=60)
+        textToWrite = "Goal   : Age:%03.1f / Male:%d / Female:%d / Glasses:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_goals['age'], self._game_goals['male'], self._game_goals['female'], self._game_goals['glasses'], self._game_goals['hair'], self._game_goals['happy'], self._game_goals['surprised'])
         cv2.putText(img, textToWrite, (270, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (  0, 255,   0), 3)
-        textToWrite = "Current: Age:%03.1f / Male:%d / Female:%d / Glases:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_results['age'], self._game_results['male'], self._game_results['female'], self._game_results['glasses'], self._game_results['hair'], self._game_results['happy'], self._game_results['surprised'])
+        textToWrite = "Current: Age:%03.1f / Male:%d / Female:%d / Glasses:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_results['age'], self._game_results['male'], self._game_results['female'], self._game_results['glasses'], self._game_results['hair'], self._game_results['happy'], self._game_results['surprised'])
         cv2.putText(img, textToWrite, (270, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (  0,   0, 255), 3)
         #if self._check_game():
         #    cv2.putText(img, "You Won!", (0, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
