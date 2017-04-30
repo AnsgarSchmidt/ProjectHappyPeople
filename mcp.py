@@ -171,14 +171,15 @@ class PHP():
                                color=(255, 255, 0), thickness=3)
             cv2.putText(img, textToWrite, (faceRectangle['left'], faceRectangle['top'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
+        cv2.rectangle(img, (0, 0), (1400, 60), color=(0, 0, 0), thickness=60)
         textToWrite = "Goal   : Age:%03.1f / Male:%d / Female:%d / Glases:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_goals['age'], self._game_goals['male'], self._game_goals['female'], self._game_goals['glasses'], self._game_goals['hair'], self._game_goals['happy'], self._game_goals['surprised'])
-        cv2.putText(img, textToWrite, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 3)
+        cv2.putText(img, textToWrite, (0, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (  0, 255,   0), 3)
         textToWrite = "Current: Age:%03.1f / Male:%d / Female:%d / Glases:%d / Beard:%d / Happy:%d / Surprised:%d" % (self._game_results['age'], self._game_results['male'], self._game_results['female'], self._game_results['glasses'], self._game_results['hair'], self._game_results['happy'], self._game_results['surprised'])
-        cv2.putText(img, textToWrite, (0, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
-        if self._check_game():
-            cv2.putText(img, "You Won!", (0, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
-        else:
-            cv2.putText(img, "Find more people :-)", (0, 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 3)
+        cv2.putText(img, textToWrite, (0, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (  0,   0, 255), 3)
+        #if self._check_game():
+        #    cv2.putText(img, "You Won!", (0, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
+        #else:
+        #    cv2.putText(img, "Find more people :-)", (0, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (  0, 0, 255), 3)
         cv2.imwrite('/tmp/test.png', img)
 
     def _cut_faces(self):
@@ -247,11 +248,11 @@ class PHP():
             return False
 
     def main_loop(self):
-        GPIO.output(12, False)
-        GPIO.output(16, False)
-        GPIO.output(18, False)
         in_game = True
         while True:
+            GPIO.output(12, False)
+            GPIO.output(16, False)
+            GPIO.output(18, False)
             self._generate_game_goals()
             in_game = True
             while in_game:
